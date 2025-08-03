@@ -15,7 +15,7 @@ Before you can use the script, you need to download it from GitHub and make it e
 Use `curl` to download the script from its GitHub repository and place it in `/usr/local/bin`, a standard directory for user-installed executables.
 
 ```bash
-sudo curl -o /usr/local/bin/docker-update.sh https://raw.githubusercontent.com/your-username/your-repo/main/compose-update.sh
+sudo curl -o /usr/local/bin/docker-update.sh https://raw.githubusercontent.com/anderskeis/DockerComposeUpdate/compose-update.sh
 ```
 
 > **Note:** Replace the URL with the actual raw link to your script on GitHub.
