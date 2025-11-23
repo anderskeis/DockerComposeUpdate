@@ -22,59 +22,128 @@
 #
 
 # --- Configuration ---
-# The root directory where all your Docker Compose stacks are located.
 STACKS_DIR="/opt/stacks"
-# The name of the compose file to look for in each directory.
-COMPOSE_FILENAME="compose.yaml"
+DRY_RUN=false
+PRUNE_IMAGES=false
+TARGET_STACK=""
+
+# --- Helper Functions ---
+
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+}
+
+error() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
+}
+
+usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -d          Dry run (print commands without executing)"
+    echo "  -p          Prune unused images after update"
+    echo "  -s <name>   Update only a specific stack (directory name)"
+    echo "  -h          Show this help message"
+    exit 1
+}
+
+# --- Argument Parsing ---
+
+while getopts "dps:h" opt; do
+    case $opt in
+        d) DRY_RUN=true ;;
+        p) PRUNE_IMAGES=true ;;
+        s) TARGET_STACK="$OPTARG" ;;
+        h) usage ;;
+        *) usage ;;
+    esac
+done
 
 # --- Script Body ---
 
-# Check if the stacks directory exists
 if [ ! -d "$STACKS_DIR" ]; then
-  echo "Error: Stacks directory not found at '$STACKS_DIR'"
-  exit 1
+    error "Stacks directory not found at '$STACKS_DIR'"
+    exit 1
 fi
 
-echo "----------------------------------------------------"
-echo "Starting update for all Docker Compose stacks..."
-echo "Root directory: $STACKS_DIR"
-echo "----------------------------------------------------"
-echo
+log "Starting Docker Compose update..."
+log "Root directory: $STACKS_DIR"
+[ "$DRY_RUN" = true ] && log "Mode: DRY RUN"
 
-# Iterate over each subdirectory in the STACKS_DIR
-# The */ ensures we only match directories.
-for stack in "$STACKS_DIR"/*/; do
-  # Check if the compose file exists in the directory
-  if [ -f "${stack}${COMPOSE_FILENAME}" ]; then
-    
-    # Get the name of the stack from the directory path for logging
-    stack_name=$(basename "$stack")
-    
-    echo "--- Updating stack: $stack_name ---"
-    
-    # Navigate into the stack's directory
-    cd "$stack" || exit
-    
-    # Pull the latest images for the services defined in the compose file
-    echo "Pulling latest images for $stack_name..."
-    docker compose pull
-    
-    # Recreate and restart the services in detached mode
-    # This will only recreate containers whose images have been updated.
-    echo "Applying updates for $stack_name..."
-    docker compose up -d
-    
-    echo "--- Finished updating stack: $stack_name ---"
-    echo
-    
-  else
-    # Optional: Log if a directory doesn't contain a compose file
-    echo "--- Skipping $(basename "$stack") (no ${COMPOSE_FILENAME} found) ---"
-    echo
-  fi
-done
+# Define function to update a single stack
+update_stack() {
+    local stack_path="$1"
+    local stack_name=$(basename "$stack_path")
+    local compose_file=""
 
-echo "----------------------------------------------------"
-echo "All stacks have been processed."
-echo "----------------------------------------------------"
+    # Check for various compose filenames
+    for file in "compose.yaml" "compose.yml" "docker-compose.yaml" "docker-compose.yml"; do
+        if [ -f "${stack_path}/${file}" ]; then
+            compose_file="$file"
+            break
+        fi
+    done
+
+    if [ -z "$compose_file" ]; then
+        log "Skipping $stack_name: No compose file found."
+        return
+    fi
+
+    log "--- Updating stack: $stack_name (File: $compose_file) ---"
+
+    # Use a subshell to isolate directory changes
+    (
+        cd "$stack_path" || exit 1
+
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] cd $stack_path"
+            echo "  [DRY-RUN] docker compose -f $compose_file pull"
+            echo "  [DRY-RUN] docker compose -f $compose_file up -d"
+        else
+            # Pull latest images
+            if ! docker compose -f "$compose_file" pull; then
+                error "Failed to pull images for $stack_name"
+                exit 1
+            fi
+
+            # Restart services
+            if ! docker compose -f "$compose_file" up -d; then
+                error "Failed to bring up $stack_name"
+                exit 1
+            fi
+        fi
+    )
+
+    if [ $? -eq 0 ]; then
+        log "--- Finished updating stack: $stack_name ---"
+    else
+        error "Update failed for stack: $stack_name"
+    fi
+    echo ""
+}
+
+# Main execution logic
+if [ -n "$TARGET_STACK" ]; then
+    # Update specific stack
+    target_path="${STACKS_DIR}/${TARGET_STACK}"
+    if [ -d "$target_path" ]; then
+        update_stack "$target_path"
+    else
+        error "Stack directory not found: $target_path"
+    fi
+else
+    # Update all stacks
+    for stack in "$STACKS_DIR"/*/; do
+        [ -d "$stack" ] || continue # Skip if not a directory
+        update_stack "${stack%/}"   # Remove trailing slash
+    done
+fi
+
+# Cleanup
+if [ "$PRUNE_IMAGES" = true ] && [ "$DRY_RUN" = false ]; then
+    log "Pruning unused images..."
+    docker image prune -f
+fi
+
+log "All operations completed."
 
