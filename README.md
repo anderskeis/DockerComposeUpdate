@@ -1,34 +1,23 @@
-# Docker Compose Updater Script
+# Docker Compose Updater
 
-A robust bash script to automate the update process for Docker Compose-managed applications.
-
-The script iterates through a specified root directory, finds subdirectories containing Docker Compose files (auto-detecting `compose.yaml`, `docker-compose.yml`, etc.), pulls the latest images, and restarts the services.
-
-It includes features for dry-runs, targeting specific stacks, and cleaning up unused images.
+Updates Docker Compose stacks in subdirectories of `STACKS_DIR`: it detects a Compose file, pulls images, and runs `docker compose up -d`. It is intended for root's crontab and requires Docker Engine with the Compose plugin.
 
 ---
 
-## 1. Initial Setup
+## Installation
 
 ### Download the Script
 
-Use `curl` to download the script and place it in `/usr/local/bin`.
-
 ```bash
 sudo curl -o /usr/local/bin/docker-update.sh https://raw.githubusercontent.com/anderskeis/DockerComposeUpdate/main/compose-update.sh
-```
-
-### Make it Executable
-
-```bash
 sudo chmod +x /usr/local/bin/docker-update.sh
 ```
 
 ---
 
-## 2. Configuration
+## Configuration
 
-You can configure the default root directory by editing the top of the script:
+Set the directory containing one subdirectory per stack:
 
 ```bash
 sudo nano /usr/local/bin/docker-update.sh
@@ -39,9 +28,9 @@ sudo nano /usr/local/bin/docker-update.sh
 STACKS_DIR="/opt/stacks"
 ```
 
-- `STACKS_DIR`: The default path where your stack folders are located.
+- `STACKS_DIR` defaults to `/opt/stacks`.
+- Compose files are checked in this order:
 
-The script automatically looks for the following files in priority order:
 1. `compose.yaml`
 2. `compose.yml`
 3. `docker-compose.yaml`
@@ -49,7 +38,7 @@ The script automatically looks for the following files in priority order:
 
 ---
 
-## 3. Usage
+## Usage
 
 ```bash
 sudo /usr/local/bin/docker-update.sh [options]
@@ -57,48 +46,40 @@ sudo /usr/local/bin/docker-update.sh [options]
 
 ### Options
 
-| Flag | Description |
-|------|-------------|
-| `-d` | **Dry Run**: Print commands without executing them. Useful for testing. |
-| `-p` | **Prune**: Remove unused "dangling" images after the update completes. |
-| `-s <name>` | **Specific Stack**: Update only the specified directory name (e.g., `-s web-server`). |
-| `-h` | **Help**: Show usage information. |
+- `-d`: Print commands without running them.
+- `-p`: Prune unused images after successful updates.
+- `-s <name>`: Update one stack directory, for example `-s web-server`.
+- `-h`: Show help.
+
+The script exits nonzero when a stack is missing or an operation fails. With `-p`, pruning runs only after all updates succeed.
 
 ### Examples
 
-**Update all stacks:**
 ```bash
 sudo /usr/local/bin/docker-update.sh
 ```
 
-**Check what would happen (Dry Run):**
 ```bash
 sudo /usr/local/bin/docker-update.sh -d
 ```
 
-**Update all stacks and remove old images:**
 ```bash
 sudo /usr/local/bin/docker-update.sh -p
 ```
 
-**Update only the `my-app` stack:**
 ```bash
 sudo /usr/local/bin/docker-update.sh -s my-app
 ```
 
 ---
 
-## 4. Scheduling with Cron
+## Cron
 
-You can automate the update process using `cron`.
-
-### Edit Crontab
 ```bash
 sudo crontab -e
 ```
 
-### Example Cron Job
-Run every Sunday at 3:00 AM, update all stacks, prune old images, and log output:
+Run weekly on Sunday at 03:00, with pruning and a log file:
 
 ```cron
 0 3 * * 0 /usr/local/bin/docker-update.sh -p >> /var/log/docker-update.log 2>&1

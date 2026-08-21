@@ -44,7 +44,7 @@ usage() {
     echo "  -p          Prune unused images after update"
     echo "  -s <name>   Update only a specific stack (directory name)"
     echo "  -h          Show this help message"
-    exit 1
+    exit "${1:-1}"
 }
 
 # --- Argument Parsing ---
@@ -54,7 +54,7 @@ while getopts "dps:h" opt; do
         d) DRY_RUN=true ;;
         p) PRUNE_IMAGES=true ;;
         s) TARGET_STACK="$OPTARG" ;;
-        h) usage ;;
+        h) usage 0 ;;
         *) usage ;;
     esac
 done
@@ -114,35 +114,54 @@ update_stack() {
         fi
     )
 
-    if [ $? -eq 0 ]; then
+    local update_status=$?
+    if [ "$update_status" -eq 0 ]; then
         log "--- Finished updating stack: $stack_name ---"
     else
         error "Update failed for stack: $stack_name"
     fi
     echo ""
+    return "$update_status"
 }
 
 # Main execution logic
+UPDATE_FAILED=false
 if [ -n "$TARGET_STACK" ]; then
     # Update specific stack
+    case "$TARGET_STACK" in
+        .|..|*/*)
+            error "Stack name must be a single directory name: $TARGET_STACK"
+            exit 1
+            ;;
+    esac
+
     target_path="${STACKS_DIR}/${TARGET_STACK}"
-    if [ -d "$target_path" ]; then
-        update_stack "$target_path"
-    else
+    if [ ! -d "$target_path" ]; then
         error "Stack directory not found: $target_path"
+        exit 1
     fi
+
+    update_stack "$target_path" || UPDATE_FAILED=true
 else
     # Update all stacks
     for stack in "$STACKS_DIR"/*/; do
         [ -d "$stack" ] || continue # Skip if not a directory
-        update_stack "${stack%/}"   # Remove trailing slash
+        update_stack "${stack%/}" || UPDATE_FAILED=true # Remove trailing slash
     done
 fi
 
 # Cleanup
-if [ "$PRUNE_IMAGES" = true ] && [ "$DRY_RUN" = false ]; then
+if [ "$PRUNE_IMAGES" = true ] && [ "$DRY_RUN" = false ] && [ "$UPDATE_FAILED" = false ]; then
     log "Pruning unused images..."
-    docker image prune -f
+    if ! docker image prune -f; then
+        error "Failed to prune unused images"
+        UPDATE_FAILED=true
+    fi
+fi
+
+if [ "$UPDATE_FAILED" = true ]; then
+    error "One or more operations failed."
+    exit 1
 fi
 
 log "All operations completed."
