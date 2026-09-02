@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -u
+
 #
 # --- IMPORTANT NOTE ON EXECUTION ERRORS ---
 # If you see an error like ": not found" or "bad interpreter" on the first line,
@@ -26,15 +28,16 @@ STACKS_DIR="/opt/stacks"
 DRY_RUN=false
 PRUNE_IMAGES=false
 TARGET_STACK=""
+TARGET_STACK_SET=false
 
 # --- Helper Functions ---
 
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
 }
 
 error() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2
 }
 
 usage() {
@@ -53,13 +56,23 @@ while getopts "dps:h" opt; do
     case $opt in
         d) DRY_RUN=true ;;
         p) PRUNE_IMAGES=true ;;
-        s) TARGET_STACK="$OPTARG" ;;
+        s) TARGET_STACK="$OPTARG"; TARGET_STACK_SET=true ;;
         h) usage 0 ;;
         *) usage ;;
     esac
 done
 
+if [ "$TARGET_STACK_SET" = true ] && [ -z "$TARGET_STACK" ]; then
+    error "Stack name must not be empty"
+    exit 1
+fi
+
 # --- Script Body ---
+
+if ! command -v docker >/dev/null 2>&1; then
+    error "docker not found in PATH"
+    exit 1
+fi
 
 if [ ! -d "$STACKS_DIR" ]; then
     error "Stacks directory not found at '$STACKS_DIR'"
@@ -73,7 +86,8 @@ log "Root directory: $STACKS_DIR"
 # Define function to update a single stack
 update_stack() {
     local stack_path="$1"
-    local stack_name=$(basename "$stack_path")
+    local stack_name
+    stack_name=$(basename "$stack_path")
     local compose_file=""
 
     # Check for various compose filenames
