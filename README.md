@@ -75,6 +75,10 @@ sudo /usr/local/bin/docker-update.sh -p
 ```
 
 ```bash
+sudo /usr/local/bin/docker-update.sh -a
+```
+
+```bash
 sudo /usr/local/bin/docker-update.sh -s my-app
 ```
 
